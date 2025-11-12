@@ -153,6 +153,7 @@ def _assess_experiment(image_folder:str):
     stability_results = {wi:{'Timestamp':None, 'Class': None} for wi in wells}
     WINDOW = 80
     fixed_threshold = {} #for otsu binarisation
+    crystallised_state = {wi: False for wi in wells}
 
     #read and process images
     for idx, image_name in enumerate(tqdm(images, unit='images')):
@@ -235,11 +236,14 @@ def _assess_experiment(image_folder:str):
 
             fixed_thresh = fixed_threshold.get(well_key)
             if top_cls_name == 'Crystal':
-                if fixed_thresh is None:
-                    crystal_number_pixels, new_thresh = calculate_crystal_pixels(well_crop, threshold_to_use=None)
-                    fixed_threshold[well_key] = new_thresh
+                if crystallised_state[well_key]:
+                    if fixed_thresh is None:
+                        crystal_number_pixels, new_thresh = calculate_crystal_pixels(well_crop, threshold_to_use=None)
+                        fixed_threshold[well_key] = new_thresh
+                    else:
+                        crystal_number_pixels, _ = calculate_crystal_pixels(well_crop, threshold_to_use=fixed_thresh)
                 else:
-                    crystal_number_pixels, _ = calculate_crystal_pixels(well_crop, threshold_to_use=fixed_thresh)
+                    crystal_number_pixels = well_data[well_key][-1]['crystal_number_pixels'] if well_data[well_key] else 0
             else: # Dust or Amorphous
                 # Retain last known pixel count for non-crystals
                 if well_data[well_key]:
@@ -290,6 +294,7 @@ def _assess_experiment(image_folder:str):
                         if all(c=='Crystal' for c in next_classes):
                             stability_results[well_key]["Timestamp"] = entries[i]['image']
                             stability_results[well_key]['Class'] = 'Unstable'
+                            crystallised_state[well_key] = True
                             break
 
     
@@ -351,7 +356,7 @@ def _assess_experiment(image_folder:str):
         else:
             plt.title('Infinitely stable')
 
-        ax2.legend(loc='upper right')
+        ax2.legend(loc='upper right', fontsize = 'x-small')
         plt.tight_layout()
         plt.savefig(os.path.join(output_folder, f'well_{well_key}_stability_figure.png'))
         plt.close()
@@ -376,11 +381,11 @@ print('hopefully done')
 if __name__ == '__main__':
 
     file_path = '/home/lero/idrive/cmac/DDMAP/Stability studies'
-    folders = ['Image_analysis_test']
-    # folders = ['40_C_75_RH',
-    #            '40_C_75_RH',
-    #            '30_C_30_RH'
-    #           ]
+    # folders = ['Image_analysis_test']
+    folders = ['40_C_75_RH',
+               '40_C_75_RH',
+               '30_C_30_RH'
+              ]
     all_imagefolders = []
     for folder in folders:
         folder_path = os.path.join(file_path, folder)
@@ -392,7 +397,7 @@ if __name__ == '__main__':
             all_imagefolders.append(image_folder)
 
 
-    nproc = 32
+    nproc = 64
     with mp.Pool(nproc) as pool:
         n = len(all_imagefolders)
         chunks = max(1, n/nproc)
