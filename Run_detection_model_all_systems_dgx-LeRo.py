@@ -10,9 +10,6 @@ import cv2
 import matplotlib.pyplot as plt
 import multiprocessing as mp
 from traceback import format_exception
-#os.environ['KMP_DUPLICATE_LIB_OK']='TRUE'
-#os.environ['YOLO_VERBOSE'] = 'False'
-
 
 def now() -> str:
     return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -61,8 +58,6 @@ def calculate_crystal_pixels(image, threshold_to_use=None):
         cv2.circle(mask, (x, y), r, 255, -1)
 
         roi = cv2.bitwise_and(gray, gray, mask=mask)
-        # roi_filename = f"roi_{image_name}"
-        # cv2.imwrite(os.path.join(roi_folder, roi_filename), roi)
 
         #--------- normalise pixel intensity for each image ---------#
         mask = mask.astype(bool)
@@ -76,9 +71,6 @@ def calculate_crystal_pixels(image, threshold_to_use=None):
         
         #scale back to 255 and convert for saving image
         roi_normalised = (w * 255).astype(np.uint8)
-        
-        # roi_norm_filename = f"roi_normalised_{image_name}"
-        # cv2.imwrite(os.path.join(roi_normalised_folder, roi_norm_filename), roi_normalised)
         
         # ------------ Gaussian Filter prior to Otsu thresh ------------#
         roi_blurred = cv2.GaussianBlur(roi_normalised, ksize=(21, 21), sigmaX=0)
@@ -127,8 +119,6 @@ def _assess_experiment(image_folder:str):
     wells_detection_model = YOLO(wells_detection_model_path)
     crystal_detection_model = YOLO(crystal_detection_model_path)
     pid = os.getpid()
-    #short_folder_name = os.sep.join(image_folder.split(os.sep)[-2:])
-    #print(f'[{pid} :: {now()}] Processing {short_folder_name} on {pid}')
     output_folder = os.path.join(image_folder, "new_results")
     os.makedirs(output_folder, exist_ok=True)
 
@@ -143,11 +133,6 @@ def _assess_experiment(image_folder:str):
     first_image_timestamp = convert_timestamp(images[0])
     first_image_timestamp_str = first_image_timestamp.strftime("%d-%m-%Y %H:%M")
 
-    # Dictionary to track object states
-    object_last_state = {}
-    object_detections = {}
-    object_positions = []
-
     wells = list(range(96))
     well_data = {wi: [] for wi in wells}
     stability_results = {wi:{'Timestamp':None, 'Class': None} for wi in wells}
@@ -155,7 +140,7 @@ def _assess_experiment(image_folder:str):
     fixed_threshold = {} #for otsu binarisation
     crystallised_state = {wi: False for wi in wells}
 
-    #read and process images
+    #---------read and process images-------------#
     for idx, image_name in enumerate(tqdm(images, unit='images')):
         image_path = os.path.join(image_folder, image_name)
         img = cv2.imread(image_path) #image of well plate
@@ -219,6 +204,7 @@ def _assess_experiment(image_folder:str):
                     
             #crop the patch using the coordinates from grid position
             well_crop = img[y1:y2, x1:x2]
+            
             ##--possible to save well image here--##
 
             crystal_results = crystal_detection_model(well_crop, verbose=False)
@@ -236,14 +222,11 @@ def _assess_experiment(image_folder:str):
 
             fixed_thresh = fixed_threshold.get(well_key)
             if top_cls_name == 'Crystal':
-                if crystallised_state[well_key]:
-                    if fixed_thresh is None:
-                        crystal_number_pixels, new_thresh = calculate_crystal_pixels(well_crop, threshold_to_use=None)
-                        fixed_threshold[well_key] = new_thresh
-                    else:
-                        crystal_number_pixels, _ = calculate_crystal_pixels(well_crop, threshold_to_use=fixed_thresh)
+                if fixed_thresh is None:
+                    crystal_number_pixels, new_thresh = calculate_crystal_pixels(well_crop, threshold_to_use=None)
+                    fixed_threshold[well_key] = new_thresh
                 else:
-                    crystal_number_pixels = well_data[well_key][-1]['crystal_number_pixels'] if well_data[well_key] else 0
+                    crystal_number_pixels, _ = calculate_crystal_pixels(well_crop, threshold_to_use=fixed_thresh)
             else: # Dust or Amorphous
                 # Retain last known pixel count for non-crystals
                 if well_data[well_key]:
@@ -294,7 +277,6 @@ def _assess_experiment(image_folder:str):
                         if all(c=='Crystal' for c in next_classes):
                             stability_results[well_key]["Timestamp"] = entries[i]['image']
                             stability_results[well_key]['Class'] = 'Unstable'
-                            crystallised_state[well_key] = True
                             break
 
     
@@ -313,8 +295,21 @@ def _assess_experiment(image_folder:str):
     
         well_df = pd.DataFrame(rows)
         well_df["Timestamp_dt"] = well_df["timestamp"].apply(lambda fn: convert_timestamp(fn))
-        well_df['24 hr rolling average'] = well_df["crystal_number_pixels"].rolling(84).mean()
-        well_df['cumulative moving average'] = well_df['crystal_number_pixels'].expanding().mean() # cumulative moving avg
+        
+        well_df['1 week rolling average'] = well_df["crystal_number_pixels"].rolling(84).mean()
+        
+        #--create filtered columns for plotting crystal growth----#
+        unstable_image = stability_results[well_key]["Timestamp"]
+        well_df['plotted_crystal_number_pixels'] = 0
+        well_df['plotted_rolling_average'] = float('nan')
+        if unstable_image is not None:
+            #find start time of 80 frame stability wiondow
+            unstable_time_dt = convert_timestamp(unstable_image)
+            mask = well_df["Timestamp_dt"] >= unstable_time_dt
+            #apply raw data where confirmed stable
+            well_df.loc[mask, 'plotted_crystal_number_pixels'] = well_df.loc[mask, "crystal_number_pixels"]
+            well_df.loc[mask, 'plotted_rolling_average'] = well_df.loc[mask, '1 week rolling average']
+
         well_df_path = os.path.join(output_folder, f"well_{well_key}_data.csv")
         well_df.to_csv(well_df_path, index=False)
         #print("well data saves as csv")
@@ -324,7 +319,7 @@ def _assess_experiment(image_folder:str):
         
         #prep
         #well_df["Timestamp_dt"] = well_df["timestamp"].apply(lambda fn: convert_timestamp(fn))
-        rel_time = well_df["Timestamp_dt"].astype('int64') / (10**9) / 3600
+        rel_time = well_df["Timestamp_dt"].astype('int64') / (10**9) / 3600 / 24
         cryst_or_no = well_df['class'].map(lambda c: 1 if c == "Crystal" else 0)
         if not len(rel_time):
             continue
@@ -332,19 +327,19 @@ def _assess_experiment(image_folder:str):
 
         #plot cryst vs time
         plt.plot(rel_time, cryst_or_no, 'C0')
-        plt.xlabel('Time (hrs)')
+        plt.xlabel('Time (days)')
         plt.yticks([0,1], ['No', 'Yes'], color='C0')
+        plt.xticks(np.arange(0,91, step=10))
+        plt.xlim(0,90)
         plt.ylabel('crystallised?', color='C0')
 
         #plot crystal growth
         ax2 = plt.twinx()
     
-        ax2.plot(rel_time, well_df["crystal_number_pixels"], 'C1', label='crystal/background ratio')
-        ax2.plot(rel_time, well_df['24 hr rolling average'], 'C2', label='simple moving average')
-        ax2.plot(rel_time, well_df['cumulative moving average'], 'C3', label='cumulative moving average')
+        ax2.plot(rel_time, well_df["plotted_crystal_number_pixels"], 'C1', label='crystal/background ratio')
+        ax2.plot(rel_time, well_df['plotted_rolling_average'], 'C2', label='1 week rolling average')
         ax2.set_ylabel('Normalised crystal/ background ratio', color = 'C1')
         ax2.set_ylim(bottom=0, top=1)
-        
 
         #draw cryst marker if exists
         unstable_image = stability_results[well_key]["Timestamp"]
@@ -356,7 +351,7 @@ def _assess_experiment(image_folder:str):
         else:
             plt.title('Infinitely stable')
 
-        ax2.legend(loc='upper right', fontsize = 'x-small')
+        ax2.legend(loc='upper right', fontsize=8)
         plt.tight_layout()
         plt.savefig(os.path.join(output_folder, f'well_{well_key}_stability_figure.png'))
         plt.close()
@@ -376,7 +371,7 @@ def _assess_experiment(image_folder:str):
     stability_df.to_csv(stability_df_path, index=False)
     print("✅ stability_results saved as CSV")
 
-print('hopefully done')                                 
+print('hopefully done')                                  
 
 if __name__ == '__main__':
 
