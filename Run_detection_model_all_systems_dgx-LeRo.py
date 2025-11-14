@@ -345,8 +345,8 @@ def _assess_experiment(image_folder:str):
         unstable_image = stability_results[well_key]["Timestamp"]
         if unstable_image is not None:
             unstable_time = convert_timestamp(unstable_image)
-            unstable_hours = (unstable_time - well_df["Timestamp_dt"].iloc[0]).total_seconds() / 3600
-            plt.title(f'Crystallises after {unstable_hours:.2f} hours')
+            unstable_hours = (unstable_time - well_df["Timestamp_dt"].iloc[0]).total_seconds() / 3600 / 24
+            plt.title(f'Crystallises after {unstable_hours:.2f} days')
             plt.axvline(unstable_hours, color='k', linestyle='--', lw=2)
         else:
             plt.title('Infinitely stable')
@@ -375,10 +375,10 @@ print('hopefully done')
 
 if __name__ == '__main__':
 
-    file_path = '/home/lero/idrive/cmac/DDMAP/Stability studies'
+    file_path = '/home/lero/idrive/cmac/DDMAP/Stability studies/Stability studies back-up'
     # folders = ['Image_analysis_test']
     folders = ['40_C_75_RH',
-               '40_C_75_RH',
+               '40_C_0_RH',
                '30_C_30_RH'
               ]
     all_imagefolders = []
