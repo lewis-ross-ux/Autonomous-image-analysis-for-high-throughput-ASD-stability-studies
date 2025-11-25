@@ -135,7 +135,7 @@ def _assess_experiment(image_folder:str):
 
     wells = list(range(96))
     well_data = {wi: [] for wi in wells}
-    stability_results = {wi:{'Timestamp':None, 'Class': None} for wi in wells}
+    stability_results = {wi:{'Timestamp':None, 'Class': None, , 'time_to_cryst': None} for wi in wells}
     WINDOW = 80
     fixed_threshold = {} #for otsu binarisation
     crystallised_state = {wi: False for wi in wells}
@@ -346,6 +346,7 @@ def _assess_experiment(image_folder:str):
         if unstable_image is not None:
             unstable_time = convert_timestamp(unstable_image)
             unstable_hours = (unstable_time - well_df["Timestamp_dt"].iloc[0]).total_seconds() / 3600 / 24
+            stability_results[well_key]['time_to_cryst'] = unstable_hours
             plt.title(f'Crystallises after {unstable_hours:.2f} days')
             plt.axvline(unstable_hours, color='k', linestyle='--', lw=2)
         else:
@@ -362,7 +363,8 @@ def _assess_experiment(image_folder:str):
         stability_rows.append({
             "well": well_key,
             "unstable_timestamp": info["Timestamp"],
-            "status": info["Class"] if info["Class"] else "Stable"
+            "status": info["Class"] if info["Class"] else "Stable",
+            "time_to_cryst": info["time_to_cryst"]
         })
     
     stability_df = pd.DataFrame(stability_rows)
