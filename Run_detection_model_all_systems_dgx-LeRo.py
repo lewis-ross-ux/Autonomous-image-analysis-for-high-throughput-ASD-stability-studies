@@ -200,7 +200,7 @@ def _assess_experiment(image_folder:str):
         #-----take patches------#
         for patch in normalised_wells:
             x1, y1, x2, y2, center_x, center_y, cls_name, conf, x_coord, y_coord = patch
-            well_key = y_coord*12+x_coord #0-95 indexing
+            well_key = x_coord*8+y_coord #0-95 indexing
                     
             #crop the patch using the coordinates from grid position
             well_crop = img[y1:y2, x1:x2]
@@ -248,7 +248,7 @@ def _assess_experiment(image_folder:str):
             annotated_img = img.copy()
             for patch_info in normalised_wells:
                 x1, y1, x2, y2, center_x, center_y, cls_name, conf, x_coord, y_coord = patch_info
-                well_key = y_coord * 12 + x_coord  # 0-95 index
+                well_key = x_coord*8+y_coord  # 0-95 index
         
                 if well_data.get(well_key):
                     top_result = well_data[well_key][-1]  # last classification for this image
@@ -375,7 +375,7 @@ print('hopefully done')
 
 if __name__ == '__main__':
 
-    file_path = '/home/lero/idrive/cmac/DDMAP/Stability studies/Stability studies back-up'
+    file_path = '/home/lero/idrive/cmac/DDMAP/Stability studies'
     # folders = ['Image_analysis_test']
     folders = ['40_C_75_RH',
                '40_C_0_RH',
